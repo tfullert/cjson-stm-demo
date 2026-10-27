@@ -17,7 +17,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -72,7 +72,7 @@ jobs:
           "ARTIFACT_NAME=cjson-demo-windows-x64-cjson-$version" >> $env:GITHUB_ENV
 
       - name: Upload executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: dist/
