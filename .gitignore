@@ -1,0 +1,9 @@
+/build*/
+/dist/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.p12
+*.pfx
+test-results.json

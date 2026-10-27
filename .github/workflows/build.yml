@@ -1,0 +1,89 @@
+name: Build Windows demo
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure x64 Release build
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
+
+      - name: Build executable
+        run: |
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
+
+      - name: Run normal functionality test
+        run: |
+          ctest --test-dir build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'Normal functionality test failed.' }
+
+      - name: Verify actual dependency and CVE behavior
+        run: |
+          $version = (Get-Content build/dependency-version.txt -Raw).Trim()
+          ./scripts/Test-Demo.ps1 -Executable build/Release/cjson-demo.exe `
+            -DependencyVersion $version -ReportPath build/test-results.json
+
+      # STM SIGNING INSERTION POINT:
+      # Add your configured DigiCert signing step here, after tests and before
+      # packaging. Target: build/Release/cjson-demo.exe
+      # Verify Authenticode after signing. This supplied workflow builds an
+      # unsigned executable and does not require signing credentials.
+
+      - name: Package executable and provenance
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item build/Release/cjson-demo.exe dist/
+          Copy-Item build/dependency-version.txt dist/
+          Copy-Item build/test-results.json dist/
+          Copy-Item build/_deps/cjson-src/LICENSE dist/cJSON-LICENSE.txt
+          Copy-Item README.md dist/
+          $hash = (Get-FileHash dist/cjson-demo.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  cjson-demo.exe" | Set-Content dist/SHA256SUMS.txt
+          $version = (Get-Content build/dependency-version.txt -Raw).Trim()
+          $dependencyCommit = git -C build/_deps/cjson-src rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Could not identify dependency commit.' }
+          [ordered]@{
+            repository = $env:GITHUB_REPOSITORY
+            application_commit = $env:GITHUB_SHA
+            dependency = 'cJSON'
+            dependency_version = $version
+            dependency_commit = $dependencyCommit.Trim()
+            executable_sha256 = $hash
+          } | ConvertTo-Json | Set-Content dist/build-info.json
+          "ARTIFACT_NAME=cjson-demo-windows-x64-cjson-$version" >> $env:GITHUB_ENV
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: dist/
+          if-no-files-found: error
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics
+          path: |
+            build/test-results.json
+            build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
