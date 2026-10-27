@@ -1,3 +1,4 @@
+/* TEST OF ACTION */
 /* CVE-2023-50472 reproduction using a disposable JSON document. */
 #include <stdio.h>
 #include <string.h>
